@@ -75,6 +75,7 @@ _STATUS: dict[str, str] = {
     "zozo_cloth_no_tris": "服に三角形がありません。",
     "zozo_body_no_tris": "ボディに三角形がありません。",
     "zozo_same_object": "服とボディに同じオブジェクトは使えません。",
+    "md_listener_fail": "MD ブリッジ開始失敗: {message}",
 }
 
 

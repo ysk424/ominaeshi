@@ -19,6 +19,7 @@ from bpy.types import (
     PropertyGroup,
 )
 
+from . import md_bridge
 from .i18n import msg
 from .shell_isect_bridge import library_version
 from .zozo_handoff import (
@@ -423,6 +424,40 @@ class OMINAESHI_OT_auto_set(Operator):
         return {"FINISHED"}
 
 
+class OMINAESHI_OT_md_listener_start(Operator):
+    bl_idname = "ominaeshi.md_listener_start"
+    bl_label = "MDブリッジ開始"
+    bl_description = (
+        "Marvelous Designer 用 TCP リスナーを :7422 で開始します。"
+        "1_get_BL_avater（ボディ frame1）と 2_send_clothes_BL（服 OBJ）に応答します。"
+        "一時ファイルは %TEMP%\\tanabata 固定です"
+    )
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        props = context.scene.ominaeshi
+        try:
+            note = md_bridge.start_listener()
+        except Exception as exc:
+            message = _fix_windows_mojibake(str(exc).strip() or type(exc).__name__)
+            props.parse_status = msg("md_listener_fail", message=message)
+            return {"CANCELLED"}
+        props.parse_status = note
+        return {"FINISHED"}
+
+
+class OMINAESHI_OT_md_listener_stop(Operator):
+    bl_idname = "ominaeshi.md_listener_stop"
+    bl_label = "MDブリッジ停止"
+    bl_description = "Marvelous Designer 用 TCP リスナーを停止します"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        props = context.scene.ominaeshi
+        props.parse_status = md_bridge.stop_listener()
+        return {"FINISHED"}
+
+
 class OMINAESHI_OT_prepare_zozo(Operator):
     bl_idname = "ominaeshi.prepare_zozo"
     bl_label = "ZOZO用準備"
@@ -548,6 +583,17 @@ class OMINAESHI_PT_main(Panel):
         props = context.scene.ominaeshi
         layout.label(text=f"女郎花 v{_version()}")
         layout.separator(factor=0.4)
+
+        md = layout.box()
+        md.label(text="MD ブリッジ（ボディ→MD / 服→Blender）")
+        md.label(text=f"状態: {md_bridge.listener_status_ja()}")
+        row = md.row(align=True)
+        row.operator(OMINAESHI_OT_md_listener_start.bl_idname, text="開始")
+        row.operator(OMINAESHI_OT_md_listener_stop.bl_idname, text="停止")
+        md.label(text="MD: 1_get_BL_avater → 服作成 → 2_send_clothes_BL")
+        md.label(text="（temp 固定・storage 設定なし）")
+
+        layout.separator(factor=0.4)
         inputs = layout.column(align=True)
         inputs.label(text="入力")
         inputs.prop(props, "clothes_object", text="服")
@@ -572,6 +618,8 @@ class OMINAESHI_PT_main(Panel):
 _classes = (
     OminaeshiProperties,
     OMINAESHI_OT_auto_set,
+    OMINAESHI_OT_md_listener_start,
+    OMINAESHI_OT_md_listener_stop,
     OMINAESHI_OT_prepare_zozo,
     OMINAESHI_PT_main,
 )
@@ -598,6 +646,10 @@ def register():
 
 def unregister():
     global _zozo_process, _zozo_scene_name, _zozo_prepared_summary
+    try:
+        md_bridge.stop_listener()
+    except Exception:
+        pass
     if bpy.app.timers.is_registered(_auto_set_on_load):
         bpy.app.timers.unregister(_auto_set_on_load)
     if bpy.app.timers.is_registered(_poll_zozo_mcp):

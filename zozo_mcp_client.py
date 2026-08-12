@@ -131,7 +131,7 @@ class MCPClient:
                 "params": {
                     "protocolVersion": MCP_PROTOCOL_VERSION,
                     "capabilities": {},
-                    "clientInfo": {"name": "ominaeshi", "version": "0.1.1"},
+                    "clientInfo": {"name": "ominaeshi", "version": "0.2.0"},
                 },
             },
             timeout=5.0,

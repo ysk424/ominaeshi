@@ -1,5 +1,11 @@
 # 第三者表記
 
+## Tanabata（MD ブリッジ由来）
+
+MD 往復（TCP リスナー、ボディ frame1 ABC、服 OBJ 取込、Ageha 縫いメタ）は
+tanabata の設計・プロトコルに合わせて再実装しています。MD 側プラグインは
+tanabata 同梱のものをそのまま使います。
+
 ## ZOZO Contact Solver (ppf-contact-solver)
 
 女郎花は ZOZO Contact Solver をローカル MCP 経由で設定します。ソルバ本体は

@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "ominaeshi"
-version = "0.1.1"
+version = "0.2.0"
 name = "女郎花"
-tagline = "マーベラスデザイナーの服とボディを検査・修理して ZOZO にセット"
+tagline = "MD と服を往復し検査・修理して ZOZO にセット"
 maintainer = "Yoshihiko Tsukamoto"
 type = "add-on"
 
@@ -15,14 +15,15 @@ license = ["SPDX:GPL-3.0-or-later"]
 tags = ["Modeling", "Pipeline"]
 
 [permissions]
-files = "ZOZO MCP 用の一時設定を書き込む"
-network = "ローカルホストの ZOZO Contact Solver MCP に接続する"
+files = "MD ブリッジ一時ファイルと ZOZO MCP 設定を書き込む"
+network = "ローカルホストで MD ブリッジと ZOZO Contact Solver MCP に接続する"
 
 [build]
 paths = [
     "__init__.py",
     "ui.py",
     "i18n.py",
+    "md_bridge.py",
     "zozo_handoff.py",
     "zozo_stitches.py",
     "zozo_mcp_client.py",
