@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "ominaeshi"
-version = "0.2.0"
+version = "0.2.2"
 name = "女郎花"
 tagline = "MD と服を往復し検査・修理して ZOZO にセット"
 maintainer = "Yoshihiko Tsukamoto"
@@ -31,6 +31,10 @@ paths = [
     "THIRD_PARTY_NOTICES.md",
     "README.md",
     "LICENSE",
+    "md_addon/_bridge.py",
+    "md_addon/_import_avatar.py",
+    "md_addon/1_get_BL_avater.py",
+    "md_addon/2_send_clothes_BL.py",
     "bin/vcomp140.dll",
     "bin/shell_isect.dll",
     "bin/SHELL_ISECT_README.txt",

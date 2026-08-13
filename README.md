@@ -7,7 +7,7 @@
 
 表示とメッセージは**日本語のみ**（私用）。
 
-## パイプライン（v0.2.0）
+## パイプライン（v0.2.2）
 
 ```
 Blender ボディ ──(frame1 ABC)──► MD で服作成 ──(OBJ+縫いメタ)──► Blender
@@ -21,18 +21,21 @@ Blender ボディ ──(frame1 ABC)──► MD で服作成 ──(OBJ+縫い�
 4. MD: **2_send_clothes_BL**（服 OBJ を Blender へ）
 5. 女郎花: **ZOZO用準備** → Transfer / Run Simulation
 
-MD 側プラグインは **tanabata の既存 1 / 2 をそのまま**使います（コピー不要）。  
+MD 側プラグインは **同梱 `md_addon/`** を使う（tanabata の 1 / 2 は使わない）。  
 **使わない:** 3（全フレームボディ）、4（服 ABC）、ヘアー ABC。  
-**一時ファイル:** 常に `%TEMP%\tanabata`（storage 設定 UI なし）。
+**一時ファイル:** 常に `%TEMP%\tanabata`（storage 設定 UI なし）。  
+**ログ:** MD は `~/ominaeshi_md.log`、Blender は `~/ominaeshi_md_bridge.log`。
 
 ## 使い方
 
 1. N パネル **女郎花** を開く。
 2. **ボディ** をセット（未設定なら **自動セット**）。
 3. **MD ブリッジ → 開始**（`:7422`）。Tanabata リスナーと同時起動は不可。
-4. MD で 1 → 服作成 → 2。服は自動で「服」欄に入ります。
-5. 必要なら **足首 / 首**（cm）を調整。
-6. **ZOZO用準備** を押す。
+4. MD の Plug-in Manager で `md_addon/1_get_BL_avater.py` と
+   `md_addon/2_send_clothes_BL.py` を登録（tanabata 側の同名は外す）。
+5. MD で 1 → 服作成 → 2。服は自動で「服」欄に入ります。
+6. 必要なら **足首 / 首**（cm）を調整。
+7. **ZOZO用準備** を押す。
 
 ### ZOZO用準備の内容
 
@@ -47,7 +50,7 @@ MD 側プラグインは **tanabata の既存 1 / 2 をそのまま**使いま�
 ## 要件
 
 - Blender 5.2+（Windows x64）
-- Marvelous Designer（tanabata の MD プラグイン 1 / 2）
+- Marvelous Designer（同梱 `md_addon` の 1 / 2）
 - ZOZO Contact Solver 拡張（MCP）
 - 同梱 `bin/shell_isect.dll`
 
@@ -58,7 +61,7 @@ MD 側プラグインは **tanabata の既存 1 / 2 をそのまま**使いま�
   --command extension build --source-dir . --output-dir .\dist
 ```
 
-成果物: `dist/ominaeshi-0.2.0.zip`
+成果物: `dist/ominaeshi-0.2.2.zip`
 
 ## ライセンス
 

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Bridge to shell-isect (ZOZO-twin check + local-only fix).
 
-女郎花 uses shell-isect **0.10+** (ships **0.11.1+** with local-fix + unsliver).
+女郎花 uses shell-isect **0.10+** (ships **0.12+** with ``shell_isect_fix2``).
 Read shell-isect PROCEDURE.md before changing how this module calls the DLL.
 
 Host pipeline for Prepare for ZOZO (strict stages):
@@ -198,6 +198,7 @@ class ShellIsectReport:
 
 
 _lib = None
+_lib_has_fix2 = False
 _lib_error: str | None = None
 
 
@@ -219,7 +220,7 @@ def _candidate_dll_paths() -> list[Path]:
 
 
 def _load_library():
-    global _lib, _lib_error
+    global _lib, _lib_error, _lib_has_fix2
     if _lib is not None:
         return _lib
     if _lib_error is not None:
@@ -277,6 +278,28 @@ def _load_library():
                 f"ominaeshi requires {REQUIRED_MAJOR}.{REQUIRED_MINOR}.x"
             )
             continue
+        _lib_has_fix2 = minor.value >= 12
+        if _lib_has_fix2:
+            lib.shell_isect_fix2.argtypes = [
+                ctypes.POINTER(ctypes.c_double),
+                ctypes.POINTER(ctypes.c_double),
+                ctypes.c_int32,
+                ctypes.POINTER(ctypes.c_int32),
+                ctypes.c_int32,
+                ctypes.POINTER(ctypes.c_double),
+                ctypes.c_int32,
+                ctypes.POINTER(ctypes.c_int32),
+                ctypes.c_int32,
+                ctypes.c_double,
+                ctypes.POINTER(ctypes.c_int32),
+                ctypes.c_int32,
+                ctypes.POINTER(ctypes.c_int32),
+                ctypes.POINTER(ctypes.c_int32),
+                ctypes.c_int32,
+                ctypes.POINTER(ctypes.c_int32),
+                ctypes.POINTER(ctypes.c_int32),
+            ]
+            lib.shell_isect_fix2.restype = ctypes.c_int
         _lib = lib
         _lib_error = None
         return _lib
@@ -1106,6 +1129,60 @@ def _dll_fix_cloth_only(
     return fix_name, f"dll fix status={fix_name}"
 
 
+def _dll_fix2(
+    lib,
+    cloth: bpy.types.Object,
+    cloth_verts: np.ndarray,
+    cloth_faces: np.ndarray,
+    proxy: _BodyProxy | None,
+    gap_m: float = _LOCAL_BODY_CLEARANCE_M,
+) -> tuple[str, str]:
+    """Geometry-only FIX2 via shell_isect_fix2 (body-aware laminate)."""
+    if proxy is None or proxy.faces.shape[0] == 0:
+        return _dll_fix_cloth_only(lib, cloth, cloth_verts, cloth_faces)
+    n_verts = ctypes.c_int32(cloth_verts.shape[0])
+    n_faces = ctypes.c_int32(cloth_faces.shape[0])
+    n_bv = ctypes.c_int32(proxy.verts.shape[0])
+    n_bf = ctypes.c_int32(proxy.faces.shape[0])
+    v_ptr = cloth_verts.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+    f_ptr = cloth_faces.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
+    bv_ptr = proxy.verts.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+    bf_ptr = proxy.faces.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
+    out = np.empty_like(cloth_verts)
+    out_ptr = out.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+    before2 = ctypes.c_int32(0)
+    after_fix = ctypes.c_int32(0)
+    status = ctypes.c_int32(3)
+    rc = lib.shell_isect_fix2(
+        v_ptr,
+        out_ptr,
+        n_verts,
+        f_ptr,
+        n_faces,
+        bv_ptr,
+        n_bv,
+        bf_ptr,
+        n_bf,
+        ctypes.c_double(gap_m),
+        None,
+        0,
+        ctypes.byref(before2),
+        None,
+        0,
+        ctypes.byref(after_fix),
+        ctypes.byref(status),
+    )
+    if rc not in (0, 2):
+        return "FAILED", f"fix2 failed rc={rc}"
+    fix_name = _FIX_STATUS.get(int(status.value), f"STATUS_{int(status.value)}")
+    if fix_name in ("APPLIED", "CLEARED"):
+        _apply_world_verts(cloth, out)
+    return (
+        fix_name,
+        f"dll fix2 status={fix_name} pairs {int(before2.value)}->{int(after_fix.value)}",
+    )
+
+
 def _mesh_for_check(
     cloth: bpy.types.Object,
     proxy: _BodyProxy | None,
@@ -1262,6 +1339,12 @@ def run_check_and_fix(
             # All pairs gone after the cloth-only stage (or already clean mid).
             fix_name = "CLEARED" if check1_count > 0 else "SKIPPED"
             fix_message = f"{dll_message}; mid-check clean"
+        elif _lib_has_fix2:
+            f2_name, f2_message = _dll_fix2(
+                lib, cloth, cloth_verts2, cloth_faces2, proxy
+            )
+            fix_name = f2_name
+            fix_message = f"{dll_message}; {f2_message}"
         else:
             host_name, host_message = _local_fix_cloth_against_body(
                 lib,
@@ -1309,16 +1392,21 @@ def run_check_and_fix(
                 is_collider=ich,
             )
             if h_rc in (0, 2) and h_count > 0:
-                host2, host2_msg = _local_fix_cloth_against_body(
-                    lib,
-                    cloth,
-                    proxy,
-                    cloth_h,
-                    faces_h,
-                    nch,
-                    h_pairs if h_pairs else (),
-                    h_count,
-                )
+                if _lib_has_fix2:
+                    host2, host2_msg = _dll_fix2(
+                        lib, cloth, cloth_h, faces_h, proxy
+                    )
+                else:
+                    host2, host2_msg = _local_fix_cloth_against_body(
+                        lib,
+                        cloth,
+                        proxy,
+                        cloth_h,
+                        faces_h,
+                        nch,
+                        h_pairs if h_pairs else (),
+                        h_count,
+                    )
                 fix_name = host2 if host2 != "NOOP" else fix_name
                 fix_message = f"{fix_message}; post-unsliver {host2_msg}"
                 # Re-heal lightly: body push can re-collapse.

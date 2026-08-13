@@ -590,8 +590,8 @@ class OMINAESHI_PT_main(Panel):
         row = md.row(align=True)
         row.operator(OMINAESHI_OT_md_listener_start.bl_idname, text="開始")
         row.operator(OMINAESHI_OT_md_listener_stop.bl_idname, text="停止")
-        md.label(text="MD: 1_get_BL_avater → 服作成 → 2_send_clothes_BL")
-        md.label(text="（temp 固定・storage 設定なし）")
+        md.label(text="MD: md_addon の 1_get_BL_avater → 服作成 → 2_send_clothes_BL")
+        md.label(text="（tanabata のプラグインではなく女郎花同梱を登録）")
 
         layout.separator(factor=0.4)
         inputs = layout.column(align=True)

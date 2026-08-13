@@ -2,9 +2,9 @@
 
 ## Tanabata（MD ブリッジ由来）
 
-MD 往復（TCP リスナー、ボディ frame1 ABC、服 OBJ 取込、Ageha 縫いメタ）は
-tanabata の設計・プロトコルに合わせて再実装しています。MD 側プラグインは
-tanabata 同梱のものをそのまま使います。
+MD 往復（TCP リスナー、ボディ frame1 ABC、服 OBJ 取込、Ageha 縫いメタ、
+および `md_addon/` の MD プラグイン 1 / 2）は tanabata（MIT）の設計・
+プロトコルを元に再実装しています。
 
 ## ZOZO Contact Solver (ppf-contact-solver)
 

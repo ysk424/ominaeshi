@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """MD ブリッジ（tanabata 互換・オブジェクト転送 + 静的ボディ ABC）。
 
-MD 側は既存 tanabata プラグインをそのまま使う:
+MD 側は同梱 md_addon を使う:
   * 1_get_BL_avater  -> export_body_abc (single_frame=True のみ)
   * 2_send_clothes_BL -> import_garment_obj
 
@@ -60,7 +60,7 @@ def _write_config() -> None:
                 "garment_abc": os.path.join(TEMP_DIR, "garment.abc").replace("\\", "/"),
             },
             "bridge": "ominaeshi",
-            "version": "0.2.0",
+            "version": "0.2.2",
         }
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -69,14 +69,20 @@ def _write_config() -> None:
 
 
 def _body_object() -> bpy.types.Object | None:
-    scene = bpy.context.scene
-    props = getattr(scene, "ominaeshi", None)
-    if props is None:
-        return None
-    obj = getattr(props, "body_object", None)
-    if obj is None or obj.name not in bpy.data.objects:
-        return None
-    return obj
+    """パネルのボディ。タイマー中の context.scene 違いを避けるため全シーンを見る。"""
+    scenes = []
+    ctx_scene = getattr(bpy.context, "scene", None)
+    if ctx_scene is not None:
+        scenes.append(ctx_scene)
+    scenes.extend(s for s in bpy.data.scenes if s not in scenes)
+    for scene in scenes:
+        props = getattr(scene, "ominaeshi", None)
+        if props is None:
+            continue
+        obj = getattr(props, "body_object", None)
+        if obj is not None and obj.name in bpy.data.objects:
+            return obj
+    return None
 
 
 def is_listening() -> bool:
@@ -1069,11 +1075,13 @@ class _BridgeServer:
         try:
             req = json.loads(line)
         except json.JSONDecodeError as exc:
+            _log(f"bad json from MD: {exc}")
             self._send(conn, {"id": None, "error": f"bad json: {exc}"})
             return
 
         req_id = req.get("id")
         method = req.get("method")
+        _log(f"MD request method={method!r} id={req_id}")
         if method not in HANDLERS:
             self._send(conn, {"id": req_id, "error": f"unknown method: {method}"})
             return
