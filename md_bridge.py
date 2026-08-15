@@ -12,6 +12,7 @@ MD 側は同梱 md_addon を使う:
 from __future__ import annotations
 
 import json
+import math
 import os
 import queue
 import socket
@@ -60,7 +61,7 @@ def _write_config() -> None:
                 "garment_abc": os.path.join(TEMP_DIR, "garment.abc").replace("\\", "/"),
             },
             "bridge": "ominaeshi",
-            "version": "0.2.2",
+            "version": "0.3.2",
         }
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -282,7 +283,14 @@ def _h_import_garment_obj(params):
         pass
 
     before = set(bpy.data.objects)
-    bpy.ops.wm.obj_import(filepath=obj_path)
+    # One source object is important: MD commonly writes one OBJ object per
+    # panel, while HOU conversion must see every panel and the shared Pattern
+    # JSON at once.  Panels are separated later by face connectivity.
+    bpy.ops.wm.obj_import(
+        filepath=obj_path,
+        use_split_objects=False,
+        use_split_groups=False,
+    )
     new_objs = [o for o in bpy.data.objects if o not in before]
     mesh_objs = [o for o in new_objs if o.type == "MESH"]
     _last_garment_objs = [o.name for o in mesh_objs]
@@ -295,6 +303,11 @@ def _h_import_garment_obj(params):
         o["tanabata_pattern_json_path"] = pattern_json_path if pattern_json_ok else ""
         o["tanabata_pattern_json_ready"] = pattern_json_ok
         o["ominaeshi_from_md"] = True
+        if pattern_json_ok:
+            try:
+                _store_pattern_json(o, pattern_json_path)
+            except Exception as exc:  # noqa: BLE001
+                _log(f"could not preserve Pattern JSON on {o.name}: {exc}")
         try:
             _store_ageha_cloth_seams(o, pattern_json_path if pattern_json_ok else "")
         except Exception as exc:  # noqa: BLE001
@@ -375,6 +388,19 @@ def _h_import_garment_obj(params):
         "preserved": False,
         "bridge": "ominaeshi",
     }
+
+
+def _store_pattern_json(obj, pattern_json_path):
+    """Pack the MD Pattern JSON into a Text block for durable HOU conversion."""
+    with open(pattern_json_path, "r", encoding="utf-8") as stream:
+        raw = stream.read()
+    # Parse once now so an invalid authoring file is not silently packed.
+    json.loads(raw)
+    text_name = f"Ominaeshi_MDPattern_{obj.name}"
+    text = bpy.data.texts.get(text_name) or bpy.data.texts.new(text_name)
+    text.clear()
+    text.write(raw)
+    obj["ominaeshi_pattern_text"] = text.name
 
 
 HANDLERS = {
@@ -576,7 +602,14 @@ def _bbox_2d(points):
 def _slice_closed_polyline(points, start, end):
     if len(points) < 2:
         return []
-    closed_points = list(points) + [points[0]]
+    clean = list(points)
+    if (
+        len(clean) > 2
+        and abs(clean[-1][0] - clean[0][0]) < 1.0e-9
+        and abs(clean[-1][1] - clean[0][1]) < 1.0e-9
+    ):
+        clean.pop()
+    closed_points = clean + [clean[0]]
     lengths = [0.0]
     for a, b in zip(closed_points, closed_points[1:]):
         lengths.append(
@@ -590,12 +623,28 @@ def _slice_closed_polyline(points, start, end):
     reverse = b < a
     lo = min(a, b) * total
     hi = max(a, b) * total
-    out = []
-    for i in range(len(points)):
-        seg_lo = lengths[i]
-        seg_hi = lengths[i + 1]
-        if seg_hi >= lo and seg_lo <= hi:
-            out.append(points[i])
+
+    def point_at(distance):
+        for index in range(len(clean)):
+            seg_lo = lengths[index]
+            seg_hi = lengths[index + 1]
+            if distance <= seg_hi or index == len(clean) - 1:
+                span = seg_hi - seg_lo
+                t = 0.0 if span <= 1.0e-12 else (distance - seg_lo) / span
+                p = closed_points[index]
+                q = closed_points[index + 1]
+                return (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
+        return clean[0]
+
+    out = [point_at(lo)]
+    out.extend(
+        clean[index]
+        for index in range(1, len(clean))
+        if lo < lengths[index] < hi
+    )
+    endpoint = point_at(hi)
+    if abs(out[-1][0] - endpoint[0]) > 1.0e-9 or abs(out[-1][1] - endpoint[1]) > 1.0e-9:
+        out.append(endpoint)
     if reverse:
         out.reverse()
     return out
@@ -758,12 +807,42 @@ def _assign_pieces_to_components(pieces, components):
     remaining = set(range(len(components)))
     mapping = {}
 
+    def median(values):
+        ordered = sorted(float(value) for value in values if float(value) > 1.0e-12)
+        if not ordered:
+            return 1.0
+        middle = len(ordered) // 2
+        if len(ordered) % 2:
+            return ordered[middle]
+        return (ordered[middle - 1] + ordered[middle]) * 0.5
+
+    # MD's OBJ UV coordinates have a global X/Y scale that is different from
+    # the Pattern JSON millimetres (and the two axes need not use the same
+    # scale).  Compare dimensions after normalising each population by its
+    # median, so matching is independent of that export scale.
+    piece_median = (
+        median(piece["bbox"]["size"][0] for piece in pieces),
+        median(piece["bbox"]["size"][1] for piece in pieces),
+    )
+    component_median = (
+        median(component["uv_bbox"]["size"][0] for component in components),
+        median(component["uv_bbox"]["size"][1] for component in components),
+    )
+
     def take_best(piece, candidates):
         psize = piece["bbox"]["size"]
         best = None
         for ci in list(candidates):
             csize = components[ci]["uv_bbox"]["size"]
-            score = abs(psize[0] - csize[0]) + abs(psize[1] - csize[1])
+            score = sum(
+                abs(
+                    math.log(max(psize[axis] / piece_median[axis], 1.0e-12))
+                    - math.log(
+                        max(csize[axis] / component_median[axis], 1.0e-12)
+                    )
+                )
+                for axis in range(2)
+            )
             if best is None or score < best[0]:
                 best = (score, ci)
         if best is None:
@@ -808,7 +887,36 @@ def _assign_pieces_to_components(pieces, components):
 def _pattern_to_uv_transform(piece, component):
     pc = piece["bbox"]["center"]
     uc = component["uv_bbox"]["center"]
-    return uc[0] - pc[0], uc[1] - pc[1]
+    psize = piece["bbox"]["size"]
+    usize = component["uv_bbox"]["size"]
+    abs_x = usize[0] / psize[0] if psize[0] > 1.0e-12 else 1.0
+    abs_y = usize[1] / psize[1] if psize[1] > 1.0e-12 else 1.0
+
+    # MD can mirror a panel's UV island independently of the Pattern JSON.
+    # Select the X/Y signs whose transformed pattern boundary best fits the
+    # component's UV boundary.  Scale and centre are still exact bbox values.
+    boundary = [component["uv"][index] for index in component["boundary_verts"]]
+    pattern_points = piece.get("points", [])
+    best = None
+    for sign_x, sign_y in ((1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)):
+        scale_x = abs_x * sign_x
+        scale_y = abs_y * sign_y
+        dx = uc[0] - pc[0] * scale_x
+        dy = uc[1] - pc[1] * scale_y
+        score = 0.0
+        for point in pattern_points:
+            mapped_x = point[0] * scale_x + dx
+            mapped_y = point[1] * scale_y + dy
+            score += min(
+                (mapped_x - uv[0]) ** 2 + (mapped_y - uv[1]) ** 2
+                for uv in boundary
+            )
+        candidate = (score, scale_x, scale_y, dx, dy)
+        if best is None or candidate[0] < best[0]:
+            best = candidate
+    if best is None:
+        return abs_x, abs_y, uc[0] - pc[0] * abs_x, uc[1] - pc[1] * abs_y
+    return best[1], best[2], best[3], best[4]
 
 
 def _vertices_near_segment(component, piece, shape, ref, tolerance_mm):
@@ -822,13 +930,16 @@ def _vertices_near_segment(component, piece, shape, ref, tolerance_mm):
         source_verts = component["verts"]
     if len(pattern_points) < 2:
         return []
-    dx, dy = _pattern_to_uv_transform(piece, component)
-    segment = [(p[0] + dx, p[1] + dy) for p in pattern_points]
+    scale_x, scale_y, dx, dy = _pattern_to_uv_transform(piece, component)
+    segment = [
+        (p[0] * scale_x + dx, p[1] * scale_y + dy) for p in pattern_points
+    ]
+    tolerance_uv = tolerance_mm * max(abs(scale_x), abs(scale_y))
     result = []
     for v in source_verts:
         uv = component["uv"][v]
         dist, s = _closest_polyline_distance_2d(uv, segment)
-        if dist <= tolerance_mm:
+        if dist <= tolerance_uv:
             result.append((v, s, dist))
     if len(result) >= 2:
         return result

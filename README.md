@@ -1,58 +1,60 @@
 # 女郎花
 
-女郎は遊女の事ではありません。万葉の時代には自然の中にある静かな美しさが好まれました。女郎は美しい女の人という意味で、貴族女性に対する誉め言葉でした。最近の人は遊女だとおもっていることが多いので、ここに記しておきます。
+女郎は遊女の事ではありません。万葉の時代には自然の中にある静かな美しさが
+好まれました。女郎は美しい女の人という意味で、貴族女性に対する誉め言葉でした。
+最近の人は遊女だと思っていることが多いので、ここに記しておきます。
 
-**Marvelous Designer (MD)** と **Blender** のあいだでボディ／服を往復し、縫い辺を作り直し、
-自己交差を検査・修理したうえで **ZOZO Contact Solver** にセットする Blender 拡張です。
+**女郎花（Ominaeshi）** は Marvelous Designer（MD）から受け取った服 OBJ と
+Pattern JSON を、Blender 内の **HOU衣服コレクション**へ変換する拡張です。
+元のOBJは変更しません。表示とメッセージは日本語です。
 
-表示とメッセージは**日本語のみ**（私用）。
+## パイプライン（v0.3.2）
 
-## パイプライン（v0.2.2）
-
+```text
+Blender ボディ ──(frame 1 ABC)──► MDで服作成 ──(OBJ + Pattern JSON)──► 女郎花
+                                                                           │
+                                                              HOUコレクション
+                                                                           │
+                                                                        KOROMO
 ```
-Blender ボディ ──(frame1 ABC)──► MD で服作成 ──(OBJ+縫いメタ)──► Blender
-                                                                      │
-                                                              ZOZO用準備 → ZOZO
-```
 
-1. 女郎花パネルで **ボディ** を指定し **MD ブリッジ開始**
-2. MD: **1_get_BL_avater**（静的ボディを受け取る）
-3. MD で服を作成
-4. MD: **2_send_clothes_BL**（服 OBJ を Blender へ）
-5. 女郎花: **ZOZO用準備** → Transfer / Run Simulation
+HOUには次を保存します。
 
-MD 側プラグインは **同梱 `md_addon/`** を使う（tanabata の 1 / 2 は使わない）。  
-**使わない:** 3（全フレームボディ）、4（服 ABC）、ヘアー ABC。  
-**一時ファイル:** 常に `%TEMP%\tanabata`（storage 設定 UI なし）。  
-**ログ:** MD は `~/ominaeshi_md.log`、Blender は `~/ominaeshi_md_bridge.log`。
+- 面でつながった服パーツごとのワールド座標メッシュ
+- メートル単位の平面型紙座標 `housei_pattern_position`
+- 各パーツの `HOU` JSON（`housei-hou/1.0.0`）
+- MDの縫い線から求めた正確な頂点ペア
+  `housei_sewing_plan_json`（`housei-sewing-plan/1.0.0`）
+- 元のPattern JSON（Blender Textデータ）
+
+自己衝突の検査・修理やシミュレーションは行いません。シミュレーションは
+HOU対応のKOROMOなど、下流のソルバーが担当します。
+
+縫い頂点ペアは、Pattern JSONが指定するパーツ組の中から、MDの縫製後OBJで
+同じ位置に重なっている別境界頂点を直接検出します。そのため、MDで縫製
+シミュレーションを済ませてから服OBJを送信してください。
 
 ## 使い方
 
-1. N パネル **女郎花** を開く。
-2. **ボディ** をセット（未設定なら **自動セット**）。
-3. **MD ブリッジ → 開始**（`:7422`）。Tanabata リスナーと同時起動は不可。
-4. MD の Plug-in Manager で `md_addon/1_get_BL_avater.py` と
-   `md_addon/2_send_clothes_BL.py` を登録（tanabata 側の同名は外す）。
-5. MD で 1 → 服作成 → 2。服は自動で「服」欄に入ります。
-6. 必要なら **足首 / 首**（cm）を調整。
-7. **ZOZO用準備** を押す。
+1. Nパネルの **女郎花** を開き、**MDブリッジ開始**を押します。
+2. MDのPlug-in Managerで同梱の `md_addon/1_get_BL_avater.py` と
+   `md_addon/2_send_clothes_BL.py` を登録します。
+3. MDで `1_get_BL_avater` → 服作成 → `2_send_clothes_BL` を実行します。
+4. 女郎花の「服 OBJ」に取り込んだ服が設定されていることを確認します。
+5. **HOU** ボタンを押します。
+6. 出力された `*_HOU` コレクションをKOROMOの「HOUコレクション」に指定します。
 
-### ZOZO用準備の内容
-
-1. 服を ZOZO 用コレクションへコピー（元オブジェクトは変更しない）
-2. **ZOZO 向け縫い辺（緩いステッチ）を再構築**（パネル間＋同一パネルの筒閉じ・ダーツ）
-3. ボディをコピーし、**足首より下・首より上をカット**（アーマチュア親・修飾子は残し、アニメ可）
-4. 自己交差 **検査 → 修理 → 再検査**（shell-isect）
-5. 三角の最小面積など品質チェック
-6. **PASS** なら ZOZO MCP を縫製と同じパラメータで起動・設定
-7. **NG** ならメッセージ欄に理由を出して止める
+MD側プラグインは全フレームABC、服ABC、ヘアーABCを使いません。一時ファイルは
+`%TEMP%\tanabata`、ログはMDが `~/ominaeshi_md.log`、Blenderが
+`~/ominaeshi_md_bridge.log` です。
 
 ## 要件
 
-- Blender 5.2+（Windows x64）
-- Marvelous Designer（同梱 `md_addon` の 1 / 2）
-- ZOZO Contact Solver 拡張（MCP）
-- 同梱 `bin/shell_isect.dll`
+- Blender 5.2以降（Windows x64）
+- Marvelous Designer
+- 同梱MDプラグインの1と2
+
+外部接触ソルバー、OpenMP、交差検査DLLは不要です。
 
 ## ビルド
 
@@ -61,8 +63,8 @@ MD 側プラグインは **同梱 `md_addon/`** を使う（tanabata の 1 / 2 �
   --command extension build --source-dir . --output-dir .\dist
 ```
 
-成果物: `dist/ominaeshi-0.2.2.zip`
+成果物: `dist/ominaeshi-0.3.2.zip`
 
 ## ライセンス
 
-GPL-3.0-or-later。第三者については `THIRD_PARTY_NOTICES.md` を参照。
+GPL-3.0-or-later。MDブリッジの由来は `THIRD_PARTY_NOTICES.md` を参照してください。
